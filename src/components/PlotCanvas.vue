@@ -29,12 +29,14 @@
           </label>
         </div>
         <div>
-          <button :click="previous">戻る</button>
-          <button :click="next">進む</button>
+          <button @click="previous">戻る</button>
+          <button @click="next">進む</button>
         </div>
+        <button @click="hoo">テスト</button>
         <h3>力: {{ force }}</h3>
         <h3>半径: {{ radius }}</h3>
         <h3>描画方法: {{ drawMethod }}</h3>
+        <h3>現在の履歴のindex: {{ currentIndex }}</h3>
         <h3>履歴</h3>
         <ul>
           <li v-for="history in actionHistory">action: {{ history[0] }}</li>
@@ -138,7 +140,7 @@
     ctx.strokeStyle = strokeStyle;
     ctx.stroke();
   };
-  
+
   // canvas上に円を描画
   let strokeCircle = function (centerX, centerY, radius, lineWidth=2, color='black') {
     ctx.beginPath();
@@ -164,7 +166,7 @@
     ctx.lineTo(endX, endY);
     ctx.lineWidth = lineWidth;
     ctx.stroke();
-    ctx.globalCompositeOperation = 'source-out';
+    ctx.globalCompositeOperation = 'source-over';
   };
 
   let eraceStrokedCircle = function (centerX, centerY, radius, lineWidth=2) {
@@ -173,7 +175,7 @@
     ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
     ctx.lineWidth = lineWidth;
     ctx.stroke();
-    ctx.globalCompositeOperation = 'source-out';
+    ctx.globalCompositeOperation = 'source-over';
   };
 
   let eraceFilledCircle = function (centerX, centerY, radius) {
@@ -181,26 +183,27 @@
     ctx.globalCompositeOperation = 'destination-out';
     ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
     ctx.fill();
-    ctx.globalCompositeOperation = 'source-out';
+    ctx.globalCompositeOperation = 'source-over';
   };
 
-  let addPoints = function (points, actionHistory, pointsToAdd) {
+  let addPoints = function (points, actionHistory, currentIndex, pointsToAdd) {
     // points: list of point (list of [x, y])
     // 1. pointsを更新
     // 2. actionHistoryに点が追加されるという履歴を追加
     // 3. 描画
 
     points = points.concat(pointsToAdd);
+    actionHistory = actionHistory.slice(0, currentIndex+1);
     actionHistory.push(['add', pointsToAdd]);
 
     // 描画
-    for (point of pointsToAdd) {
+    for (let point of pointsToAdd) {
       fillCircle(point[0], point[1], 2);
     }
     return [points, actionHistory];
   };
 
-  let deletePoints = function (points, actionHistory, pointsToDelete) {
+  let deletePoints = function (points, actionHistory, currentIndex, pointsToDelete) {
     // points: list of point
     // 1. pointsを更新
     // 2. actionHistoryに履歴を追加
@@ -211,6 +214,8 @@
         return point !== pointToDelete;
       });
     }
+
+    actionHistory = actionHistory.slice(0, currentIndex+1);
     actionHistory.push(['delete', pointsToDelete]);
     // 描画
     for (let point of pointsToDelete) {
@@ -218,6 +223,55 @@
     }
 
     return [points, actionHistory]
+  };
+
+  let undo = function (points, action_name, pointsToOperate) {
+    // action_nameが 'add'ならdeleteを, 'delete'ならaddを対象のpointsに対して実行する
+    // TODO: コードの重複を修正する
+
+    if (action_name === 'add') {
+      for (let pointToDelete of pointsToOperate) {
+        points = points.filter(function (point) {
+          return point !== pointToDelete;
+        });
+      }
+      // 描画
+      for (let point of pointsToOperate) {
+        eraceFilledCircle(point[0], point[1], 2);
+      }
+      return points;
+    } else if (action_name === 'delete') {
+      points = points.concat(pointsToOperate);
+
+      // 描画
+      for (let point of pointsToOperate) {
+        fillCircle(point[0], point[1], 2);
+      }
+      return points;
+    }
+  };
+
+  let redo = function (points, action_name, pointsToOperate) {
+    if (action_name === 'add') {
+      points = points.concat(pointsToOperate);
+
+      // 描画
+      for (let point of pointsToOperate) {
+        fillCircle(point[0], point[1], 2);
+      }
+      return points;
+    } else if (action_name === 'delete') {
+      for (let pointToDelete of pointsToOperate) {
+        points = points.filter(function (point) {
+          return point !== pointToDelete;
+        });
+      }
+      // 描画
+      for (let point of pointsToOperate) {
+        eraceFilledCircle(point[0], point[1], 2);
+      }
+      return points;
+    }
   };
 
   export default {
@@ -251,13 +305,25 @@
       ctx = canvas.getContext('2d');
     },
     methods: {
+      hoge() {
+        console.log('this is hoge');
+      },
+      hoo() {
+        this.hoge();
+      },
       previous() {
         if (this.currentIndex >= 0) {
-          let targetAction = this.actionHistory[this.currentIndex]
+          let [action_name, points] = this.actionHistory[this.currentIndex];
+          this.points = undo(this.points, action_name, points);
+          this.currentIndex -= 1;
         }
       },
       next() {
-
+        if (this.currentIndex+1 < this.actionHistory.length) {
+          let [action_name, points] = this.actionHistory[this.currentIndex+1];
+          this.points = redo(this.points, action_name, points);
+          this.currentIndex += 1;
+        }
       },
       mouseDownCanvas(event) {
         // drawMethod === "alongLine のとき, this.cursorを現在の座標にセット
@@ -270,10 +336,8 @@
         } else if (this.drawMethod === "manual") {
           // addの処理
           let points = [[x, y]];
-          [this.points, this.actionHistory] = addPoints(this.points, this.actionHistory, points);
-
-          // 点を描画
-          drawCircle(x, y, this.strokeWidth, 'fill', 'black');
+          [this.points, this.actionHistory] = addPoints(this.points, this.actionHistory, this.currentIndex, points);
+          this.currentIndex += 1;
         }
 
         this.events.push(event.type);
@@ -326,7 +390,7 @@
             ctx.globalCompositeOperation = 'destination-out';
             ctx.arc(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 0, 2*Math.PI, true);
             ctx.stroke();
-            ctx.globalCompositeOperation = 'source-out';
+            ctx.globalCompositeOperation = 'source-over';
           }
           let [x, y] = getCoordinate(event);
           this.cursor = [x, y];
@@ -354,7 +418,7 @@
         // ctx.globalCompositeOperation = 'destination-out';
         // ctx.arc(this.cursor[0], this.cursor[1], this.radius, 0, 2*Math.PI, true);
         // ctx.stroke();
-        // ctx.globalCompositeOperation = 'source-out';
+        // ctx.globalCompositeOperation = 'source-over';
         this.radius = this.force * 100;
         ctx.arc(this.cursor[0], this.cursor[1], this.radius, 0, 2*Math.PI, true);
         ctx.stroke();
@@ -386,7 +450,7 @@
             ctx.globalCompositeOperation = 'destination-out';
             ctx.arc(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 0, 2*Math.PI, true);
             ctx.stroke();
-            ctx.globalCompositeOperation = 'source-out';
+            ctx.globalCompositeOperation = 'source-over';
           }
           
         }
