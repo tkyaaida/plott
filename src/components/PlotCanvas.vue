@@ -139,35 +139,85 @@
     ctx.stroke();
   };
   
-  // canvas上に丸を描画
-  let drawCircle = function (centerX, centerY, radius, method='stroke', color='black') {
+  // canvas上に円を描画
+  let strokeCircle = function (centerX, centerY, radius, lineWidth=2, color='black') {
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
-    if (method === 'stroke') {
-      ctx.strokeStyle = color;
-      ctx.stroke();
-    } else if (method === 'fill') {
-      ctx.fillStyle = color;
-      ctx.fill();
-    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  };
+
+  // canvas上に円を描画し, 内部を塗りつぶす
+  let fillCircle = function (centerX, centerY, radius, color='black') {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
+    ctx.fillStyle = color;
+    ctx.fill();
+  };
+
+  // canvas上の線を消去
+  let eraceLine = function (startX, startY, endX, endY, lineWidth=3) {
+    ctx.beginPath();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-out';
+  };
+
+  let eraceStrokedCircle = function (centerX, centerY, radius, lineWidth=2) {
+    ctx.beginPath();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-out';
+  };
+
+  let eraceFilledCircle = function (centerX, centerY, radius) {
+    ctx.beginPath();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-out';
   };
 
   let addPoints = function (points, actionHistory, pointsToAdd) {
     // points: list of point (list of [x, y])
-    // this.pointsとactionHistoryに追加し, 描画する
+    // 1. pointsを更新
+    // 2. actionHistoryに点が追加されるという履歴を追加
+    // 3. 描画
+
     points = points.concat(pointsToAdd);
     actionHistory.push(['add', pointsToAdd]);
-    return [points, actionHistory];
 
+    // 描画
+    for (point of pointsToAdd) {
+      fillCircle(point[0], point[1], 2);
+    }
+    return [points, actionHistory];
   };
+
   let deletePoints = function (points, actionHistory, pointsToDelete) {
     // points: list of point
+    // 1. pointsを更新
+    // 2. actionHistoryに履歴を追加
+    // 3. 描画
+
     for (let pointToDelete of pointsToDelete) {
       points = points.filter(function (point) {
         return point !== pointToDelete;
       });
     }
     actionHistory.push(['delete', pointsToDelete]);
+    // 描画
+    for (let point of pointsToDelete) {
+      eraceFilledCircle(point[0], point[1], 2);
+    }
+
+    return [points, actionHistory]
   };
 
   export default {
@@ -207,7 +257,7 @@
         }
       },
       next() {
-        let x = 1;
+
       },
       mouseDownCanvas(event) {
         // drawMethod === "alongLine のとき, this.cursorを現在の座標にセット
