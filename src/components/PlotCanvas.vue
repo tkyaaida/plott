@@ -1,4 +1,4 @@
-<template>
+<template xmlns="http://www.w3.org/1999/html">
   <div>
     <h1> Plot Canvas</h1>
     <div class="container">
@@ -32,6 +32,7 @@
           <button @click="previous">戻る</button>
           <button @click="next">進む</button>
         </div>
+        <button @click="saveImage">保存</button>
         <h3>力: {{ force }}</h3>
         <h3>半径: {{ radius }}</h3>
         <h3>描画方法: {{ drawMethod }}</h3>
@@ -204,6 +205,7 @@
         currentIndex: -1,
         candPoints: [],
         cursor: null,
+        cursorHistory: [],
         count: 0,
         events: [],
         force: 0,
@@ -281,8 +283,8 @@
         }
       },
       next() {
-        if (this.currentIndex+1 < this.actionHistory.length) {
-          let [action_name, points] = this.actionHistory[this.currentIndex+1];
+        if (this.currentIndex + 1 < this.actionHistory.length) {
+          let [action_name, points] = this.actionHistory[this.currentIndex + 1];
           this.redo(action_name, points);
         }
       },
@@ -314,7 +316,7 @@
         else if (this.drawMethod === "manual") {
           this.points.push([x, y]);
           ctx.beginPath();
-          ctx.arc(x, y, this.strokeWidth, 0, 2*Math.PI, true);
+          ctx.arc(x, y, this.strokeWidth, 0, 2 * Math.PI, true);
           ctx.fill();
         }
 
@@ -322,33 +324,31 @@
       },
       mouseMoveCanvas(event) {
         // drawMethod === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
-        // drawMethod === "manual" のとき, 何もしない
-
-        let [x, y] = getCoordinate(event);
+        // drawMethod === "manual" のとき, 円形のカーソルを動かす. ドラッグしているときに点を描画
 
         if (this.drawMethod === "alongLine") {
           // 座標が変化していて, ドラッグ中の場合, 描画する
-          if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
-            let [startAux1, endAux1, startAux2, endAux2] = getAuxiliaryCoordinate(this.cursor[0], this.cursor[1], x, y);
-            drawLine(this.cursor[0], this.cursor[1], x, y);
-            drawLine(this.cursor[0], this.cursor[1], startAux1, endAux1, 3, 'red');
-            drawLine(this.cursor[0], this.cursor[1], startAux2, endAux2, 3, 'red');
-          }
-          this.cursor = [x, y];
-        } else if (this.drawMethod === 'manual' ) {
+          // if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
+          //   let [startAux1, endAux1, startAux2, endAux2] = getAuxiliaryCoordinate(this.cursor[0], this.cursor[1], x, y);
+          //   drawLine(this.cursor[0], this.cursor[1], x, y);
+          //   drawLine(this.cursor[0], this.cursor[1], startAux1, endAux1, 3, 'red');
+          //   drawLine(this.cursor[0], this.cursor[1], startAux2, endAux2, 3, 'red');
+          // }
+          // this.cursor = [x, y];
+        } else if (this.drawMethod === 'manual') {
           // カーソルを移動させる
           if (this.cursor != null) {
             // 一つ前のcursorの位置をクリアする
-            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.strokeWidth*10);
+            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 6);
           }
           let [x, y] = getCoordinate(event);
           this.cursor = [x, y];
 
           // 大きな円を描画
-          strokeCircle(x, y, this.strokeWidth*10);
+          strokeCircle(x, y, this.strokeWidth * 10);
         }
 
-        if (! (this.events.length > 0 && this.events[this.events.length-1] === "mousemove")) {
+        if (!(this.events.length > 0 && this.events[this.events.length - 1] === "mousemove")) {
           this.events.push(event.type);
         }
       },
@@ -367,7 +367,7 @@
         // ctx.stroke();
         // ctx.globalCompositeOperation = 'source-over';
         this.radius = this.force * 100;
-        ctx.arc(this.cursor[0], this.cursor[1], this.radius, 0, 2*Math.PI, true);
+        ctx.arc(this.cursor[0], this.cursor[1], this.radius, 0, 2 * Math.PI, true);
         ctx.stroke();
 
         let [x, y] = getTouchCoordinate(event);
@@ -378,7 +378,7 @@
         // }
         drawLine(this.cursor[0], this.cursor[1], x, y);
         this.cursor = [x, y];
-        if (! (this.events.length > 0 && this.events[this.events.length-1] === "touchmove")) {
+        if (!(this.events.length > 0 && this.events[this.events.length - 1] === "touchmove")) {
           this.events.push(event.type);
         }
       },
@@ -395,11 +395,10 @@
             // 一つ前のcursorの位置をクリアする
             ctx.beginPath();
             ctx.globalCompositeOperation = 'destination-out';
-            ctx.arc(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 0, 2*Math.PI, true);
+            ctx.arc(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 0, 2 * Math.PI, true);
             ctx.stroke();
             ctx.globalCompositeOperation = 'source-over';
           }
-          
         }
         this.cursor = null;
         this.events.push(event.type);
@@ -414,6 +413,41 @@
         }
         this.cursor = null;
         this.events.push(event.type);
+      },
+      saveImage() {
+        let base64 = canvas.toDataURL("image/png");
+        let blob = this.base64ToBlob(base64);
+        this.saveBlob(blob, 'plot.png')
+      },
+      base64ToBlob(base64) {
+        let tmp = base64.split(',');
+        // base64データの文字列をデコード
+        let data = atob(tmp[1]);
+        // tmp[0]の文字列（data:image/png;base64）からコンテンツタイプ（image/png）部分を取得
+        let mime = tmp[0].split(':')[1].split(';')[0];
+        //  1文字ごとにUTF-16コードを表す 0から65535 の整数を取得
+        let buf = new Uint8Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+          buf[i] = data.charCodeAt(i);
+        }
+        // blobデータを作成
+        return new Blob([buf], {type: mime});
+      },
+      saveBlob(blob, fileName) {
+        let url = (window.URL || window.webkitURL);
+        // ダウンロード用のURL作成
+        let dataUrl = url.createObjectURL(blob);
+        // イベント作成
+        let event = document.createEvent("MouseEvents");
+        event.initMouseEvent("click", true, false, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+        // a要素を作成
+        let a = document.createElementNS("http://www.w3.org/1999/xhtml", "a");
+        // ダウンロード用のURLセット
+        a.href = dataUrl;
+        // ファイル名セット
+        a.download = fileName;
+        // イベントの発火
+        a.dispatchEvent(event);
       },
     }
   }
