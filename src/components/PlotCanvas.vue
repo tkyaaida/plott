@@ -32,7 +32,6 @@
           <button @click="previous">戻る</button>
           <button @click="next">進む</button>
         </div>
-        <button @click="hoo">テスト</button>
         <h3>力: {{ force }}</h3>
         <h3>半径: {{ radius }}</h3>
         <h3>描画方法: {{ drawMethod }}</h3>
@@ -159,7 +158,7 @@
   };
 
   // canvas上の線を消去
-  let eraceLine = function (startX, startY, endX, endY, lineWidth=3) {
+  let eraseLine = function (startX, startY, endX, endY, lineWidth=3) {
     ctx.beginPath();
     ctx.globalCompositeOperation = 'destination-out';
     ctx.moveTo(startX, startY);
@@ -169,109 +168,21 @@
     ctx.globalCompositeOperation = 'source-over';
   };
 
-  let eraceStrokedCircle = function (centerX, centerY, radius, lineWidth=2) {
+  let eraseStrokedCircle = function (centerX, centerY, radius, lineWidth=2) {
     ctx.beginPath();
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
+    ctx.arc(centerX, centerY, radius+1, 0, 2*Math.PI, true);
     ctx.lineWidth = lineWidth;
     ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
   };
 
-  let eraceFilledCircle = function (centerX, centerY, radius) {
+  let eraseFilledCircle = function (centerX, centerY, radius) {
     ctx.beginPath();
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
+    ctx.arc(centerX, centerY, radius+1, 0, 2*Math.PI, true);
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
-  };
-
-  let addPoints = function (points, actionHistory, currentIndex, pointsToAdd) {
-    // points: list of point (list of [x, y])
-    // 1. pointsを更新
-    // 2. actionHistoryに点が追加されるという履歴を追加
-    // 3. 描画
-
-    points = points.concat(pointsToAdd);
-    actionHistory = actionHistory.slice(0, currentIndex+1);
-    actionHistory.push(['add', pointsToAdd]);
-
-    // 描画
-    for (let point of pointsToAdd) {
-      fillCircle(point[0], point[1], 2);
-    }
-    return [points, actionHistory];
-  };
-
-  let deletePoints = function (points, actionHistory, currentIndex, pointsToDelete) {
-    // points: list of point
-    // 1. pointsを更新
-    // 2. actionHistoryに履歴を追加
-    // 3. 描画
-
-    for (let pointToDelete of pointsToDelete) {
-      points = points.filter(function (point) {
-        return point !== pointToDelete;
-      });
-    }
-
-    actionHistory = actionHistory.slice(0, currentIndex+1);
-    actionHistory.push(['delete', pointsToDelete]);
-    // 描画
-    for (let point of pointsToDelete) {
-      eraceFilledCircle(point[0], point[1], 2);
-    }
-
-    return [points, actionHistory]
-  };
-
-  let undo = function (points, action_name, pointsToOperate) {
-    // action_nameが 'add'ならdeleteを, 'delete'ならaddを対象のpointsに対して実行する
-    // TODO: コードの重複を修正する
-
-    if (action_name === 'add') {
-      for (let pointToDelete of pointsToOperate) {
-        points = points.filter(function (point) {
-          return point !== pointToDelete;
-        });
-      }
-      // 描画
-      for (let point of pointsToOperate) {
-        eraceFilledCircle(point[0], point[1], 2);
-      }
-      return points;
-    } else if (action_name === 'delete') {
-      points = points.concat(pointsToOperate);
-
-      // 描画
-      for (let point of pointsToOperate) {
-        fillCircle(point[0], point[1], 2);
-      }
-      return points;
-    }
-  };
-
-  let redo = function (points, action_name, pointsToOperate) {
-    if (action_name === 'add') {
-      points = points.concat(pointsToOperate);
-
-      // 描画
-      for (let point of pointsToOperate) {
-        fillCircle(point[0], point[1], 2);
-      }
-      return points;
-    } else if (action_name === 'delete') {
-      for (let pointToDelete of pointsToOperate) {
-        points = points.filter(function (point) {
-          return point !== pointToDelete;
-        });
-      }
-      // 描画
-      for (let point of pointsToOperate) {
-        eraceFilledCircle(point[0], point[1], 2);
-      }
-      return points;
-    }
   };
 
   export default {
@@ -298,6 +209,7 @@
         force: 0,
         drawMethod: "alongLine",
         radius: 0,
+        brush: true,
       }
     },
     mounted() {
@@ -305,24 +217,73 @@
       ctx = canvas.getContext('2d');
     },
     methods: {
-      hoge() {
-        console.log('this is hoge');
+      addPoints(pointsToAdd) {
+        // points: list of point (list of [x, y])
+        // 1. this.pointsを更新
+        // 2. 描画
+
+        this.points = this.points.concat(pointsToAdd);
+
+        // 描画
+        for (let point of pointsToAdd) {
+          fillCircle(point[0], point[1], 2);
+        }
       },
-      hoo() {
-        this.hoge();
+      deletePoints(pointsToDelete) {
+        // points: list of point
+        // 1. this.pointsを更新
+        // 2. 描画
+
+        for (let pointToDelete of pointsToDelete) {
+          this.points = this.points.filter(function (point) {
+            return point !== pointToDelete;
+          });
+        }
+        // 描画
+        for (let point of pointsToDelete) {
+          eraseFilledCircle(point[0], point[1], 2);
+        }
+      },
+      add(points) {
+        this.addPoints(points);
+        this.actionHistory = this.actionHistory.slice(0, this.currentIndex + 1);
+        this.actionHistory.push(['add', points]);
+        this.currentIndex += 1;
+      },
+      delete(points) {
+        this.deletePoints(points);
+        this.actionHistory = this.actionHistory.slice(0, this.currentIndex + 1);
+        this.actionHistory.push(['delete', points]);
+        this.currentIndex += 1;
+      },
+      undo(action_name, points) {
+        // action_nameが 'add'ならdeleteを, 'delete'ならaddを対象のpointsに対して実行する
+
+        if (action_name === 'add') {
+          this.deletePoints(points);
+        } else if (action_name === 'delete') {
+          this.addPoints(points);
+        }
+        this.currentIndex -= 1;
+      },
+      redo(action_name, points) {
+        if (action_name === 'add') {
+          this.addPoints(points);
+        } else if (action_name === 'delete') {
+          this.deletePoints(points);
+        }
+        this.currentIndex += 1;
       },
       previous() {
         if (this.currentIndex >= 0) {
           let [action_name, points] = this.actionHistory[this.currentIndex];
-          this.points = undo(this.points, action_name, points);
-          this.currentIndex -= 1;
+          this.undo(action_name, points);
         }
       },
       next() {
         if (this.currentIndex+1 < this.actionHistory.length) {
           let [action_name, points] = this.actionHistory[this.currentIndex+1];
-          this.points = redo(this.points, action_name, points);
-          this.currentIndex += 1;
+          this.redo(action_name, points);
         }
       },
       mouseDownCanvas(event) {
@@ -336,8 +297,7 @@
         } else if (this.drawMethod === "manual") {
           // addの処理
           let points = [[x, y]];
-          [this.points, this.actionHistory] = addPoints(this.points, this.actionHistory, this.currentIndex, points);
-          this.currentIndex += 1;
+          this.add(points);
         }
 
         this.events.push(event.type);
@@ -369,36 +329,23 @@
         if (this.drawMethod === "alongLine") {
           // 座標が変化していて, ドラッグ中の場合, 描画する
           if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
-            // if (this.cursor == null) {
-            //   drawLine(x, y, x, y);
-            // } else {
-            //   drawLine(this.cursor[0], this.cursor[1], x, y);
-            // }
             let [startAux1, endAux1, startAux2, endAux2] = getAuxiliaryCoordinate(this.cursor[0], this.cursor[1], x, y);
-            console.log(startAux1);
-            console.log(endAux1);
             drawLine(this.cursor[0], this.cursor[1], x, y);
             drawLine(this.cursor[0], this.cursor[1], startAux1, endAux1, 3, 'red');
             drawLine(this.cursor[0], this.cursor[1], startAux2, endAux2, 3, 'red');
           }
           this.cursor = [x, y];
-        } else if (this.drawMethod === 'manuall' ) {
+        } else if (this.drawMethod === 'manual' ) {
           // カーソルを移動させる
           if (this.cursor != null) {
             // 一つ前のcursorの位置をクリアする
-            ctx.beginPath();
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.arc(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 0, 2*Math.PI, true);
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over';
+            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.strokeWidth*10);
           }
           let [x, y] = getCoordinate(event);
           this.cursor = [x, y];
 
           // 大きな円を描画
-          ctx.beginPath();
-          ctx.arc(x, y, this.strokeWidth * 10, 0, 2*Math.PI, true);
-          ctx.stroke();
+          strokeCircle(x, y, this.strokeWidth*10);
         }
 
         if (! (this.events.length > 0 && this.events[this.events.length-1] === "mousemove")) {
