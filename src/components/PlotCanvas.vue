@@ -414,12 +414,14 @@
         if (this.currentIndex >= 0) {
           let [action_name, points] = this.actionHistory[this.currentIndex];
           this.undo(action_name, points);
+          this.drawPoints();
         }
       },
       next() {
         if (this.currentIndex + 1 < this.actionHistory.length) {
           let [action_name, points] = this.actionHistory[this.currentIndex + 1];
           this.redo(action_name, points);
+          this.drawPoints();
         }
       },
       addPointsFromRegion() {
