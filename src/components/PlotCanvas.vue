@@ -4,8 +4,8 @@
     <div class="container">
       <div class="box">
         <div>
-          <button @click="previous" class="button" id="previousButton" :disabled="isFirst">← 戻る</button>
-          <button @click="next" class="button" id="nextButton" :disabled="isLast">進む →</button>
+          <button @click.prevent="previous" class="button" id="previousButton" :disabled="isFirst">← 戻る</button>
+          <button @click.prevent="next" class="button" id="nextButton" :disabled="isLast">進む →</button>
           <label class="subtitle is-5">点の数: {{ points.length }} / 1000</label>
         </div>
         <canvas
@@ -87,14 +87,6 @@
 <script>
   import Tabs from './ui/Tabs.vue'
   import Tab from './ui/Tab.vue'
-  // canvas操作
-
-  // 座標変換
-  // let convertCoordinate = (coord) => {
-  //   let canvasX = (coord[0] - xMin) / (xMax - xMin) * width;
-  //   let canvasY = (coord[1] - yMax) / (yMin - yMax) * height;
-  //   return [canvasX, canvasY];
-  // };
 
   let canvas = null;
   let ctx = null;
@@ -123,8 +115,8 @@
     return [x + randomX, y + randomY];
   };
 
+  // pointsOfPolygonが作る多角形の内部に, n個の座標を一様に生成する.
   let getRandomCoordinatesInPolygon = function (pointsOfPolygon, n) {
-    // pointsOfPolygonが作る多角形の内部に, n個の座標を一様に生成する.
     let [leftTop, length] = getBoundingSquare(pointsOfPolygon);
     let originX = leftTop[0] + length / 2;
     let originY = leftTop[1] + length / 2;
@@ -207,8 +199,8 @@
     ctx.globalCompositeOperation = 'source-over';
   };
 
+  // pointsOfPolygonが作る多角形の内部にpointがあるかを判定する
   let isPointInPolygon = function (point, pointsOfPolygon) {
-    // pointsOfPolygonが作る多角形の内部にpointがあるかを判定する
     let count = 0;
     for (let i = 0; i < pointsOfPolygon.length-1; i++) {
       let x1 = pointsOfPolygon[i][0];
@@ -231,8 +223,8 @@
     return count % 2 === 1;
   };
 
+  // pointsOfPolygonで作られる多角形の面積を計算
   let calcArea = function (pointsOfPolygon) {
-    // pointsOfPolygonで作られる多角形の面積を計算
     let area = 0;
     for (let i = 0; i < pointsOfPolygon.length-1; i++) {
       let p1 = pointsOfPolygon[i];
@@ -242,9 +234,8 @@
     return Math.abs(area);
   };
 
+  // pointsOfPolygonで作られる多角形の角となる座標を求める
   let getCornerCoordinates = function (pointsOfPolygon) {
-    // pointsOfPolygonで作られる多角形の角となる座標を求める
-
     let maxX = 0;
     let maxXCoordinate = null;
     let minX = 1000000000;
@@ -282,8 +273,8 @@
     return [maxXCoordinate, minXCoordinate, maxYCoordinate, minYCoordinate];
   };
 
+  // pointsOfPolygonで作られる多角形を覆う正方形を取得
   let getBoundingSquare = function (pointsOfPolygon) {
-    // pointsOfPolygonで作られる多角形を覆う正方形を取得
     let [maxXPoint, minXPoint, maxYPoint, minYPoint] = getCornerCoordinates(pointsOfPolygon);
     let maxX = maxXPoint[0];
     let minX = minXPoint[0];
@@ -321,13 +312,10 @@
         pointsOfPolygon: [],
         cursor: null,
         cursorHistory: [],
-        count: 0,
         events: [],
-        force: 0,
         mode: "ジェスチャー",
         manualMode: "ブラシ",
         gestureMode: "描画",
-        radius: 0,
         pointRadius: 3,
         cursorRadius: 25,
         density: 0.005,
