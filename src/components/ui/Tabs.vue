@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="tabs">
+    <div :class="{tabs: true, 'is-boxed': isBoxed, 'is-toggle': isToggle}">
       <ul>
         <li v-for="tab in tabs" :class="{ 'is-active': tab.isActive }">
           <a :href="tab.href" @click="selectTab(tab)">{{ tab.name }}</a>
@@ -16,6 +16,10 @@
 <script>
 export default {
   name: 'tabs',
+  props: {
+    isBoxed: {default: false},
+    isToggle: {default: false},
+  },
   data() {
     return {
       tabs: [],
@@ -29,6 +33,7 @@ export default {
       this.tabs.forEach(tab => {
         tab.isActive = (tab.href === selectedTab.href);
       });
+      this.$emit('select-tab', selectedTab.name);
     },
   }
 }

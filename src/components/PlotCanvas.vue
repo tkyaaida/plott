@@ -1,11 +1,12 @@
-<template xmlns="http://www.w3.org/1999/html">
+<template>
   <div>
-    <h1> Plot Canvas</h1>
+    <h1 class="title is-1">Plott</h1>
     <div class="container">
       <div class="box">
         <div>
-          <button @click="previous" class="button" disabled>← 戻る</button>
-          <button @click="next" class="button">進む →</button>
+          <button @click="previous" class="button" id="previousButton" :disabled="isFirst">← 戻る</button>
+          <button @click="next" class="button" id="nextButton" :disabled="isLast">進む →</button>
+          <label class="subtitle is-5">点の数: {{ points.length }} / 1000</label>
         </div>
         <canvas
           id='plotCanvas' ref='canvas' :width=width :height=height
@@ -16,51 +17,43 @@
       </div>
 
       <div class="box">
-        <h3>点の数: {{ points.length }}</h3>
+        <p class="subtitle is-4">描画方法</p>
+        <Tabs isBoxed="true" isToggle="true" @select-tab="setMode">
+          <Tab name="ジェスチャー" :selected="true">
+          </Tab>
+          <Tab name="マニュアル" @click="setMode">
+            <Tabs isBoxed="true" @select-tab="setManualMode">
+              <tab name="ブラシ" :selected="true">
+                <label>ブラシ</label>
+              </tab>
+              <tab name="一点ずつ">
+                <label>一点ずつ</label>
+              </tab>
+              <tab name="消しゴム">
+                <label>消しゴム</label>
+              </tab>
+            </Tabs>
+          </Tab>
+        </Tabs>
         <input class="slider" step="1" min="0" max="100" value="50" type="range">
-        <h3>描画方法</h3>
-        <div class="tabs is-boxed">
+
+        <div v-show="isDev">
+          <h3>力: {{ force }}</h3>
+          <h3>半径: {{ radius }}</h3>
+          <h3>描画方法: {{ mode }}</h3>
+          <h3>マニュアルモードでの描画方法: {{ mode === "マニュアル" ? manualMode : "ジェスチャーモード"}}</h3>
+          <h3>現在の履歴のindex: {{ currentIndex }}</h3>
+          <h3>履歴</h3>
           <ul>
-            <li class="is-active"><a>ジェスチャー</a></li>
-            <li><a>手動</a></li>
+            <li v-for="history in actionHistory">action: {{ history[0] }}</li>
           </ul>
         </div>
-        <div class="tabs">
-          <ul>
-            <li class="is-active"><a>ブラシ</a></li>
-            <li><a>1点ずつ</a></li>
-            <li><a>消しゴム</a></li>
-          </ul>
-        </div>
-        <div class="control">
-          <label class="radio">
-            <input type="radio" value="alongLine" v-model="mode" checked>
-            線に沿って点を打つ
-          </label>
-          <!--<label class="radio">-->
-            <!--<input type="radio" name="draw-method">-->
-            <!--範囲を決めて点を打つ-->
-          <!--</label>-->
-          <label class="radio">
-            <input type="radio" value="manual" v-model="mode">
-            手動で点を打つ
-          </label>
-        </div>
 
-
-        <h3>力: {{ force }}</h3>
-        <h3>半径: {{ radius }}</h3>
-        <h3>描画方法: {{ mode }}</h3>
-        <h3>現在の履歴のindex: {{ currentIndex }}</h3>
-        <h3>履歴</h3>
-        <ul>
-          <li v-for="history in actionHistory">action: {{ history[0] }}</li>
-        </ul>
       </div>
     </div>
     <button @click="saveImage" class="button">キャンバスの画像を出力</button>
 
-    <div class="info">
+    <div class="info" v-show="isDev">
       <h3>現在の座標: {{ cursor != null ? cursor : "canvas外" }}</h3>
       <ul>
         <li v-for="point in points">
@@ -76,6 +69,8 @@
 </template>
 
 <script>
+  import Tabs from './ui/Tabs.vue'
+  import Tab from './ui/Tab.vue'
   // canvas操作
 
   // 座標変換
@@ -87,6 +82,7 @@
 
   let canvas = null;
   let ctx = null;
+  let mouseMoveFlag = true;
 
   let timer;
   let throttle = function (targetFunc, time) {
@@ -131,7 +127,7 @@
     let m = areaOfSquare / areaOfPolygon * n;
 
     let randomCoordinates = [];
-    
+
     for (let i = 0; i < m; i++) {
       let x = originX + (Math.random() - 0.5) * length;
       let y = originY + (Math.random() - 0.5) * length;
@@ -311,15 +307,15 @@
 
   export default {
     name: 'PlotCanvas',
+    components: {Tabs, Tab},
     props: {
       size: Array,  // (height, width)
-      xRange: Array,  // x軸の値の範囲
-      yRange: Array,  // y軸の値の範囲
-      strokeWidth: Number,
     },
     computed: {
       height() {return this.size[0]},
       width() {return this.size[1]},
+      isFirst() {return this.currentIndex === -1},
+      isLast() {return this.currentIndex === this.actionHistory.length - 1}
     },
     data() {
       return {
@@ -333,10 +329,12 @@
         count: 0,
         events: [],
         force: 0,
-        mode: "alongLine",
-        drawMethod: "brush",
+        mode: "ジェスチャー",
+        manualMode: "ブラシ",
         radius: 0,
-        brush: true,
+        pointRadius: 3,
+        cursorRadius: 25,
+        isDev: true,
       }
     },
     mounted() {
@@ -344,9 +342,15 @@
       ctx = canvas.getContext('2d');
     },
     methods: {
+      setMode(mode) {
+        this.mode = mode;
+      },
+      setManualMode(mode) {
+        this.manualMode = mode;
+      },
       drawPoints() {
         for (let point of this.points) {
-          fillCircle(point[0], point[1], 2);
+          fillCircle(point[0], point[1], this.pointRadius);
         }
       },
       addPoints(pointsToAdd) {
@@ -358,7 +362,7 @@
 
         // 描画
         for (let point of pointsToAdd) {
-          fillCircle(point[0], point[1], 2);
+          fillCircle(point[0], point[1], this.pointRadius);
         }
       },
       deletePoints(pointsToDelete) {
@@ -373,7 +377,7 @@
         }
         // 描画
         for (let point of pointsToDelete) {
-          eraseFilledCircle(point[0], point[1], 2);
+          eraseFilledCircle(point[0], point[1], this.pointRadius);
         }
       },
       add(points) {
@@ -440,10 +444,10 @@
 
         if (this.mode === "alongLine") {
           this.cursor = [x, y];
-        } else if (this.mode === "manual") {
-        //   // addの処理
-        //   let points = [[x, y]];
-        //   this.add(points);
+        } else if (this.mode === "マニュアル") {
+          if (this.manualMode === "一点ずつ") {
+            this.add([[x, y]]);
+          }
         }
         this.events.push(event.type);
       },
@@ -453,14 +457,12 @@
 
         let [x, y] = getTouchCoordinate(event);
 
-        if (this.mode === "alongLine") {
+        if (this.mode === "ジェスチャー") {
           this.cursor = [x, y];
         }
-        else if (this.mode === "manual") {
-          this.points.push([x, y]);
-          ctx.beginPath();
-          ctx.arc(x, y, this.strokeWidth, 0, 2 * Math.PI, true);
-          ctx.fill();
+        else if (this.mode === "マニュアル") {
+        } else {
+          alert("ERROR: invalid mode")
         }
 
         this.events.push(event.type);
@@ -469,7 +471,7 @@
         // mode === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
         // mode === "manual" のとき, 円形のカーソルを動かす. ドラッグしているときに点を描画
 
-        if (this.mode === "alongLine") {
+        if (this.mode === "ジェスチャー") {
           // 座標が変化していて, ドラッグ中の場合, 描画する
           // if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
           //   let [startAux1, endAux1, startAux2, endAux2] = getAuxiliaryCoordinate(this.cursor[0], this.cursor[1], x, y);
@@ -478,26 +480,36 @@
           //   drawLine(this.cursor[0], this.cursor[1], startAux2, endAux2, 3, 'red');
           // }
           // this.cursor = [x, y];
-        } else if (this.mode === 'manual') {
+        } else if (this.mode === 'マニュアル') {
+
           // カーソルを移動させる
           if (this.cursor != null) {
             // 一つ前のcursorの位置をクリアする
-            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 6);
+            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.cursorRadius, 6);
           }
+          this.drawPoints();
           let [x, y] = getCoordinate(event);
           this.cursor = [x, y];
 
-          // 大きな円を描画
-          strokeCircle(x, y, this.strokeWidth * 10);
+          if (this.manualMode === 'ブラシ') {
+            // ブラシで描画
+            // 大きな円を描画
+            strokeCircle(x, y, this.cursorRadius);
 
-          // ドラッグ中の場合カーソル内の点にplotする
-          if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
-            let [x, y] = getRandomCoordinate(this.cursor[0], this.cursor[1], this.strokeWidth*10);
-            this.candidatePoints.push([x, y]);
-            this.add([[x, y]]);
+            // ドラッグ中の場合カーソル内の点にplotする
+            if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
+              let [x, y] = getRandomCoordinate(this.cursor[0], this.cursor[1], this.cursorRadius);
+              this.candidatePoints.push([x, y]);
+              this.add([[x, y]]);
+            }
+          } else if (this.manualMode === '一点ずつ') {
+            // 一点ずつは何もしない
+          } else if (this.manualMode === '消しゴム') {
+            // 消しゴム
+          } else {
+            alert('ERROR: ' + this.manualMode + ' is invalid manualMode')
           }
         }
-
         this.drawPoints();
 
         if (!(this.events.length > 0 && this.events[this.events.length - 1] === "mousemove")) {
@@ -535,16 +547,16 @@
         }
       },
       mouseUpCanvas(event) {
-        if (this.mode === 'gesture') {
+        if (this.mode === 'ジェスチャー') {
           console.log('gesture');
-        } else if (this.mode === 'manual') {
+        } else if (this.mode === 'マニュアル') {
           // this.candidatePointsをまとめる
-          if (this.drawMethod === 'brush') {
+          if (this.manualMode === 'ブラシ') {
             // add
             this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidatePoints.length);
             this.actionHistory.push(['add', this.candidatePoints]);
             this.currentIndex = this.actionHistory.length - 1;
-          } else if (this.drawMethod === 'eracer') {
+          } else if (this.manualMode === '消しゴム') {
             this.delete(this.candidatePoints);
           }
           this.candidatePoints = [];
@@ -554,13 +566,13 @@
       mouseOutCanvas() {
         // mode === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
         // mode === "manual" のとき, 現在の座標をクリアする
-        if (this.mode === "alongLine") {
-          console.log('pass');
-        } else if (this.mode === "manual") {
+        if (this.mode === "ジェスチャー") {
+          // ジェスチャーモード
+        } else if (this.mode === "マニュアル") {
           // ブラシの表示をクリア
           if (this.cursor != null) {
             // cursorをクリアする
-            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.strokeWidth*10, 6);
+            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.cursorRadius, 6);
             this.drawPoints();
           }
         }
@@ -638,5 +650,19 @@
 
   .box {
     margin: 10px;
+  }
+
+  #previousButton {
+    text-align: left;
+    margin-right: 10px;
+  }
+
+  #nextButton {
+    text-align: left;
+    margin-right: 100px;
+  }
+
+  label.subtitle {
+    text-align: right;
   }
 </style>

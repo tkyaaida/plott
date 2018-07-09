@@ -3,8 +3,7 @@
     <!--<img src="./assets/logo.png">-->
     <!--<HelloWorld msg="Welcome to Your Vue.js App"/>-->
     <PlotCanvas
-      :size="[500, 500]" :xRange="[-1, 1]" :yRange="[-1, 1]"
-      :strokeWidth="2"
+      :size="[600, 600]"
     ></PlotCanvas>
   </div>
 </template>
