@@ -19,21 +19,30 @@
       <div class="box">
         <p class="subtitle is-4">描画方法</p>
         <Tabs isBoxed="true" isToggle="true" @select-tab="setMode">
-          <Tab name="ジェスチャー" :selected="true">
+          <Tab name="ジェスチャー">
+            <div class="sizeSliderContainer">
+              <label>密度: </label>
+              <input class="slider" step="0.001" min="0.001" max="0.01" value="0.001" type="range" v-model="density" />
+            </div>
           </Tab>
-          <Tab name="マニュアル" @click="setMode">
+          <Tab name="マニュアル" @click="setMode" :selected="true">
             <Tabs isBoxed="true" @select-tab="setManualMode">
-              <tab name="ブラシ" :selected="true">
-                <label>ブラシ</label>
-              </tab>
-              <tab name="一点ずつ"></tab>
-              <tab name="消しゴム">
-                <label>消しゴム</label>
-              </tab>
+              <Tab name="ブラシ" :selected="true">
+                <div class="sizeSliderContainer">
+                  <label>サイズ: </label>
+                  <input class="slider" step="1" min="1" max="100" value="25" type="range" v-model="cursorRadius" />
+                </div>
+              </Tab>
+              <Tab name="一点ずつ"></Tab>
+              <Tab name="消しゴム">
+                <div class="sizeSliderContainer">
+                  <label>サイズ: </label>
+                  <input class="slider" step="1" min="1" max="100" value="25" type="range" v-model="cursorRadius" />
+                </div>
+              </Tab>
             </Tabs>
           </Tab>
         </Tabs>
-        <input class="slider" step="1" min="0" max="100" value="50" type="range">
 
         <div v-show="isDev">
           <h3>力: {{ force }}</h3>
@@ -131,27 +140,10 @@
       let y = originY + (Math.random() - 0.5) * length;
       randomCoordinates.push([x, y]);
     }
-    return randomCoordinates;
-  };
 
-  // 点を描画する範囲の線を引くために座標を取得
-  let getAuxiliaryCoordinate = function (startX, startY, endX, endY, width=10) {
-    let diffX = endX - startX;
-    let diffY = startY - endY;  // canvasの座標系ではy軸は下向き正
-
-    let scaleFactor = width / Math.sqrt(diffX * diffX + diffY * diffY);
-
-    let startAux1X = startX - diffY * scaleFactor;
-    let startAux1Y = startY + diffX * scaleFactor;
-    let startAux2X = startX + diffY * scaleFactor;
-    let startAux2Y = startY - diffX * scaleFactor;
-
-    let endAux1X = startAux1X + diffX;
-    let endAux1Y = startAux1Y + diffY;
-    let endAux2X = startAux2X + diffX;
-    let endAux2Y = startAux2Y + diffY;
-
-    return [[startAux1X, startAux1Y], [endAux1X, endAux1Y], [startAux2X, startAux2Y], [endAux2X, endAux2Y]];
+    return randomCoordinates.filter(function (point) {
+      return isPointInPolygon(point, pointsOfPolygon);
+    });
   };
 
   // canvas上に線を描画
@@ -205,10 +197,16 @@
     ctx.globalCompositeOperation = 'source-over';
   };
 
+  let erasePolygon = function (points) {
+    for (let i = 0; i < points.length - 1; i++) {
+      eraseLine(points[i][0], points[i][1], points[i+1][0], points[i+1][1], 5);
+    }
+  };
+
   let eraseStrokedCircle = function (centerX, centerY, radius, lineWidth=2) {
     ctx.beginPath();
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.arc(centerX, centerY, radius+1, 0, 2*Math.PI, true);
+    ctx.arc(centerX, centerY, radius, 0, 2*Math.PI, true);
     ctx.lineWidth = lineWidth;
     ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
@@ -222,42 +220,32 @@
     ctx.globalCompositeOperation = 'source-over';
   };
 
-  let isCrossing = function (point, point1, point2) {
-    // point1とpoint2を結ぶ線分がpointからx軸正の向きに引いた半直線と交わるか判定
-    let x1 = point1[0];
-    let y1 = point1[1];
-    let x2 = point2[0];
-    let y2 = point2[1];
-    if (y1 !== y2) {
-      let x = (x1 - x2) / (y1 - y2) * (point[1] - y1) + x1;
-      if (Math.abs(x1 - x2) >= Math.abs(x1 - x)) {
-        return true;
-      } else {
-        return false;
-      }
-    } else {
-      return false;
-    }
-  };
-
   let isPointInPolygon = function (point, pointsOfPolygon) {
     // pointsOfPolygonが作る多角形の内部にpointがあるかを判定する
-    pointsOfPolygon.push(pointsOfPolygon[0]);
     let count = 0;
     for (let i = 0; i < pointsOfPolygon.length-1; i++) {
-      if (isCrossing(point, pointsOfPolygon[i], pointsOfPolygon[i+1]))
-        count += 1;
+      let x1 = pointsOfPolygon[i][0];
+      let y1 = pointsOfPolygon[i][1];
+      let x2 = pointsOfPolygon[i+1][0];
+      let y2 = pointsOfPolygon[i+1][1];
+
+      if (y1 !== y2) {
+        if (x1 === x2) {
+          if (point[0] <= x1 && Math.max(y1, y2) - point[1] >= 0 && point[1] - Math.min(y1, y2) >= 0)
+            count += 1;
+        } else {
+          let x = (x1 - x2) / (y1 - y2) * (point[1] - y1) + x1;
+          if (x >= point[0] && Math.max(x1, x2) - x >= 0 && x - Math.min(x1, x2) >= 0)
+            count += 1;
+        }
+      }
     }
     // countが奇数なら内側に入っている
-    if (count % 2 === 1)
-      return true;
-    else
-      return false;
+    return count % 2 === 1;
   };
 
   let calcArea = function (pointsOfPolygon) {
     // pointsOfPolygonで作られる多角形の面積を計算
-    pointsOfPolygon.push(pointsOfPolygon[0]);
     let area = 0;
     for (let i = 0; i < pointsOfPolygon.length-1; i++) {
       let p1 = pointsOfPolygon[i];
@@ -320,7 +308,9 @@
 
   export default {
     name: 'PlotCanvas',
-    components: {Tabs, Tab},
+    components: {
+      Tabs, Tab
+    },
     props: {
       size: Array,  // (height, width)
     },
@@ -337,17 +327,19 @@
         currentIndex: -1,
         candidatePoints: [],
         candidateCount: 0,
+        pointsOfPolygon: [],
         cursor: null,
         cursorHistory: [],
         count: 0,
         events: [],
         force: 0,
-        mode: "ジェスチャー",
+        mode: "マニュアル",
         manualMode: "ブラシ",
         radius: 0,
         pointRadius: 3,
         cursorRadius: 25,
-        isDev: true,
+        density: 0.005,
+        isDev: false,
       }
     },
     mounted() {
@@ -435,6 +427,23 @@
           this.redo(action_name, points);
         }
       },
+      addPointsFromRegion() {
+        // ジェスチャーモードで領域を指定したあと, 点を追加
+        let area = calcArea(this.pointsOfPolygon);
+        let points = getRandomCoordinatesInPolygon(this.pointsOfPolygon, Math.round(this.density * area));
+        this.add(points);
+        erasePolygon(this.pointsOfPolygon);
+        this.pointsOfPolygon = [];
+      },
+      deltePointsFromRegion() {
+        // ジェスチャーモードで領域を指定したあと, 点を削除
+        let points = this.points.filter(function (point) {
+          return isPointInPolygon(point, this.pointsOfPolygon);
+        });
+        this.delete(points);
+        erasePolygon(this.pointsOfPolygon);
+        this.pointsOfPolygon = [];
+      },
       mouseDownCanvas(event) {
         // mode === "alongLine のとき, this.cursorを現在の座標にセット
         // mode === "manual" のとき, 点を描画
@@ -443,6 +452,7 @@
 
         if (this.mode === "ジェスチャー") {
           this.cursor = [x, y];
+          this.pointsOfPolygon.push(this.cursor);
         } else if (this.mode === "マニュアル") {
           if (this.manualMode === "一点ずつ") {
             this.add([[x, y]]);
@@ -474,14 +484,12 @@
         // mode === "manual" のとき, 円形のカーソルを動かす. ドラッグしているときに点を描画
 
         if (this.mode === "ジェスチャー") {
-          // 座標が変化していて, ドラッグ中の場合, 描画する
-          // if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
-          //   let [startAux1, endAux1, startAux2, endAux2] = getAuxiliaryCoordinate(this.cursor[0], this.cursor[1], x, y);
-          //   drawLine(this.cursor[0], this.cursor[1], x, y);
-          //   drawLine(this.cursor[0], this.cursor[1], startAux1, endAux1, 3, 'red');
-          //   drawLine(this.cursor[0], this.cursor[1], startAux2, endAux2, 3, 'red');
-          // }
-          // this.cursor = [x, y];
+          if (this.cursor != null) {
+            let [x, y] = getCoordinate(event);
+            drawLine(this.cursor[0], this.cursor[1], x, y, 3, 'blue');
+            this.pointsOfPolygon.push([x, y]);
+            this.cursor = [x, y];
+          }
         } else if (this.mode === 'マニュアル') {
 
           // カーソルを移動させる
@@ -561,7 +569,12 @@
       },
       mouseUpCanvas(event) {
         if (this.mode === 'ジェスチャー') {
-          console.log('gesture');
+          if (this.cursor != null) {
+            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
+            this.pointsOfPolygon.push(this.pointsOfPolygon[0]);
+            this.cursor = null;
+            this.addPointsFromRegion();
+          }
         } else if (this.mode === 'マニュアル') {
           // this.candidatePointsをまとめる
           if (this.manualMode === 'ブラシ') {
@@ -585,6 +598,12 @@
         // mode === "manual" のとき, 現在の座標をクリアする
         if (this.mode === "ジェスチャー") {
           // ジェスチャーモード
+          if (this.cursor != null) {
+            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
+            this.pointsOfPolygon.push(this.pointsOfPolygon[0]);
+            this.cursor = null;
+            this.addPointsFromRegion();
+          }
         } else if (this.mode === "マニュアル") {
           // ブラシの表示をクリア
           if (this.cursor != null) {
@@ -690,5 +709,9 @@
 
   label.subtitle {
     text-align: right;
+  }
+
+  .sizeSliderContainer {
+    margin-top: 50px;
   }
 </style>
