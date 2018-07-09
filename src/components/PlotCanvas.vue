@@ -3,9 +3,14 @@
     <h1> Plot Canvas</h1>
     <div class="container">
       <div class="box">
+        <div>
+          <button @click="previous" class="button" disabled>← 戻る</button>
+          <button @click="next" class="button">進む →</button>
+        </div>
         <canvas
           id='plotCanvas' ref='canvas' :width=width :height=height
           @mousedown="mouseDownCanvas" @mousemove="mouseMoveCanvas" @mouseout="mouseOutCanvas"
+          @mouseup="mouseUpCanvas"
           @touchstart.prevent="touchStartCanvas" @touchmove.prevent="touchMoveCanvas" @touchend.prevent="touchEndCanvas"
         ></canvas>
       </div>
@@ -14,9 +19,22 @@
         <h3>点の数: {{ points.length }}</h3>
         <input class="slider" step="1" min="0" max="100" value="50" type="range">
         <h3>描画方法</h3>
+        <div class="tabs is-boxed">
+          <ul>
+            <li class="is-active"><a>ジェスチャー</a></li>
+            <li><a>手動</a></li>
+          </ul>
+        </div>
+        <div class="tabs">
+          <ul>
+            <li class="is-active"><a>ブラシ</a></li>
+            <li><a>1点ずつ</a></li>
+            <li><a>消しゴム</a></li>
+          </ul>
+        </div>
         <div class="control">
           <label class="radio">
-            <input type="radio" value="alongLine" v-model="drawMethod" checked>
+            <input type="radio" value="alongLine" v-model="mode" checked>
             線に沿って点を打つ
           </label>
           <!--<label class="radio">-->
@@ -24,18 +42,15 @@
             <!--範囲を決めて点を打つ-->
           <!--</label>-->
           <label class="radio">
-            <input type="radio" value="manual" v-model="drawMethod">
+            <input type="radio" value="manual" v-model="mode">
             手動で点を打つ
           </label>
         </div>
-        <div>
-          <button @click="previous">戻る</button>
-          <button @click="next">進む</button>
-        </div>
-        <button @click="saveImage">保存</button>
+
+
         <h3>力: {{ force }}</h3>
         <h3>半径: {{ radius }}</h3>
-        <h3>描画方法: {{ drawMethod }}</h3>
+        <h3>描画方法: {{ mode }}</h3>
         <h3>現在の履歴のindex: {{ currentIndex }}</h3>
         <h3>履歴</h3>
         <ul>
@@ -43,6 +58,7 @@
         </ul>
       </div>
     </div>
+    <button @click="saveImage" class="button">キャンバスの画像を出力</button>
 
     <div class="info">
       <h3>現在の座標: {{ cursor != null ? cursor : "canvas外" }}</h3>
@@ -96,6 +112,32 @@
     let x = touch.clientX - rect.left;
     let y = touch.clientY - rect.top;
     return [x, y];
+  };
+
+  // (x, y) から半径r以内にランダムに点を一つ打つ
+  let getRandomCoordinate = function (x, y, r) {
+    let randomX = (Math.random() - 0.5) * 2 * r;
+    let randomY = (Math.random() - 0.5) * 2 * r;
+    return [x + randomX, y + randomY];
+  };
+
+  let getRandomCoordinatesInPolygon = function (pointsOfPolygon, n) {
+    // pointsOfPolygonが作る多角形の内部に, n個の座標を一様に生成する.
+    let [leftTop, length] = getBoundingSquare(pointsOfPolygon);
+    let originX = leftTop[0] + length / 2;
+    let originY = leftTop[1] + length / 2;
+    let areaOfSquare = length ** 2;
+    let areaOfPolygon = calcArea(pointsOfPolygon);
+    let m = areaOfSquare / areaOfPolygon * n;
+
+    let randomCoordinates = [];
+    
+    for (let i = 0; i < m; i++) {
+      let x = originX + (Math.random() - 0.5) * length;
+      let y = originY + (Math.random() - 0.5) * length;
+      randomCoordinates.push([x, y]);
+    }
+    return randomCoordinates;
   };
 
   // 点を描画する範囲の線を引くために座標を取得
@@ -186,6 +228,87 @@
     ctx.globalCompositeOperation = 'source-over';
   };
 
+  let isCrossing = function (point, point1, point2) {
+    // point1とpoint2を結ぶ線分がpointからx軸正の向きに引いた半直線と交わるか判定
+    let x1 = point1[0];
+    let y1 = point1[1];
+    let x2 = point2[0];
+    let y2 = point2[1];
+    if (y1 !== y2) {
+      let x = (x1 - x2) / (y1 - y2) * (point[1] - y1) + x1;
+      if (Math.abs(x1 - x2) >= Math.abs(x1 - x)) {
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  };
+
+  let calcArea = function (pointsOfPolygon) {
+    // pointsOfPolygonで作られる多角形の面積を計算
+    pointsOfPolygon.push(pointsOfPolygon[0]);
+    let area = 0;
+    for (let i = 0; i < pointsOfPolygon.length-1; i++) {
+      let p1 = pointsOfPolygon[i];
+      let p2 = pointsOfPolygon[i+1];
+      area += 1/2 * (p1[0]*p2[1]-p1[1]*p2[0]);
+    }
+    return Math.abs(area);
+  };
+
+  let getCornerCoordinates = function (pointsOfPolygon) {
+    // pointsOfPolygonで作られる多角形の角となる座標を求める
+
+    let maxX = 0;
+    let maxXCoordinate = null;
+    let minX = 1000000000;
+    let minXCoordinate = null;
+    let maxY = 0;
+    let maxYCoordinate = null;
+    let minY = 1000000000;
+    let minYCoordinate = null;
+
+    for (let point of pointsOfPolygon) {
+      let x = point[0];
+      let y = point[1];
+
+      if (x > maxX) {
+        maxX = x;
+        maxXCoordinate = point;
+      }
+
+      if (x < minX) {
+        minX = x;
+        minXCoordinate = point;
+      }
+
+      if (y > maxY) {
+        maxY = y;
+        maxYCoordinate = point;
+      }
+
+      if (y < minY) {
+        minY = y;
+        minYCoordinate = point;
+      }
+    }
+
+    return [maxXCoordinate, minXCoordinate, maxYCoordinate, minYCoordinate];
+  };
+
+  let getBoundingSquare = function (pointsOfPolygon) {
+    // pointsOfPolygonで作られる多角形を覆う正方形を取得
+    let [maxXPoint, minXPoint, maxYPoint, minYPoint] = getCornerCoordinates(pointsOfPolygon);
+    let maxX = maxXPoint[0];
+    let minX = minXPoint[0];
+    let maxY = maxYPoint[1];
+    let minY = minYPoint[1];
+    let length = Math.max(maxX - minX, maxY - minY);
+    return [[minX, minY], length]
+  };
+
   export default {
     name: 'PlotCanvas',
     props: {
@@ -203,13 +326,15 @@
         points: [],
         actionHistory: [],  // list of [action_name, points]
         currentIndex: -1,
-        candPoints: [],
+        candidatePoints: [],
+        pointsOfPolygon: [],
         cursor: null,
         cursorHistory: [],
         count: 0,
         events: [],
         force: 0,
-        drawMethod: "alongLine",
+        mode: "alongLine",
+        drawMethod: "brush",
         radius: 0,
         brush: true,
       }
@@ -219,6 +344,11 @@
       ctx = canvas.getContext('2d');
     },
     methods: {
+      drawPoints() {
+        for (let point of this.points) {
+          fillCircle(point[0], point[1], 2);
+        }
+      },
       addPoints(pointsToAdd) {
         // points: list of point (list of [x, y])
         // 1. this.pointsを更新
@@ -238,7 +368,7 @@
 
         for (let pointToDelete of pointsToDelete) {
           this.points = this.points.filter(function (point) {
-            return point !== pointToDelete;
+            return point[0] !== pointToDelete[0] & point[1] !== pointToDelete[1];
           });
         }
         // 描画
@@ -288,32 +418,45 @@
           this.redo(action_name, points);
         }
       },
+      isPointInPolygon(point, pointsOfPolygon) {
+        // pointsOfPolygonが作る多角形の内部にpointがあるかを判定する
+        pointsOfPolygon.push(pointsOfPolygon[0]);
+        let count = 0;
+        for (let i = 0; i < pointsOfPolygon.length-1; i++) {
+          if (isCrossing(point, pointsOfPolygon[i], pointsOfPolygon[i+1]))
+            count += 1;
+        }
+        // countが奇数なら内側に入っている
+        if (count % 2 === 1)
+          return true;
+        else
+          return false;
+      },
       mouseDownCanvas(event) {
-        // drawMethod === "alongLine のとき, this.cursorを現在の座標にセット
-        // drawMethod === "manual" のとき, 点を描画
+        // mode === "alongLine のとき, this.cursorを現在の座標にセット
+        // mode === "manual" のとき, 点を描画
 
         let [x, y] = getCoordinate(event);
 
-        if (this.drawMethod === "alongLine") {
+        if (this.mode === "alongLine") {
           this.cursor = [x, y];
-        } else if (this.drawMethod === "manual") {
-          // addの処理
-          let points = [[x, y]];
-          this.add(points);
+        } else if (this.mode === "manual") {
+        //   // addの処理
+        //   let points = [[x, y]];
+        //   this.add(points);
         }
-
         this.events.push(event.type);
       },
       touchStartCanvas(event) {
-        // drawMethod === "alongLine のとき, this.cursorを現在の座標にセット
-        // drawMethod === "manual" のとき, 点を描画
+        // mode === "alongLine のとき, this.cursorを現在の座標にセット
+        // mode === "manual" のとき, 点を描画
 
         let [x, y] = getTouchCoordinate(event);
 
-        if (this.drawMethod === "alongLine") {
+        if (this.mode === "alongLine") {
           this.cursor = [x, y];
         }
-        else if (this.drawMethod === "manual") {
+        else if (this.mode === "manual") {
           this.points.push([x, y]);
           ctx.beginPath();
           ctx.arc(x, y, this.strokeWidth, 0, 2 * Math.PI, true);
@@ -323,10 +466,10 @@
         this.events.push(event.type);
       },
       mouseMoveCanvas(event) {
-        // drawMethod === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
-        // drawMethod === "manual" のとき, 円形のカーソルを動かす. ドラッグしているときに点を描画
+        // mode === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
+        // mode === "manual" のとき, 円形のカーソルを動かす. ドラッグしているときに点を描画
 
-        if (this.drawMethod === "alongLine") {
+        if (this.mode === "alongLine") {
           // 座標が変化していて, ドラッグ中の場合, 描画する
           // if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
           //   let [startAux1, endAux1, startAux2, endAux2] = getAuxiliaryCoordinate(this.cursor[0], this.cursor[1], x, y);
@@ -335,7 +478,7 @@
           //   drawLine(this.cursor[0], this.cursor[1], startAux2, endAux2, 3, 'red');
           // }
           // this.cursor = [x, y];
-        } else if (this.drawMethod === 'manual') {
+        } else if (this.mode === 'manual') {
           // カーソルを移動させる
           if (this.cursor != null) {
             // 一つ前のcursorの位置をクリアする
@@ -346,15 +489,24 @@
 
           // 大きな円を描画
           strokeCircle(x, y, this.strokeWidth * 10);
+
+          // ドラッグ中の場合カーソル内の点にplotする
+          if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
+            let [x, y] = getRandomCoordinate(this.cursor[0], this.cursor[1], this.strokeWidth*10);
+            this.candidatePoints.push([x, y]);
+            this.add([[x, y]]);
+          }
         }
+
+        this.drawPoints();
 
         if (!(this.events.length > 0 && this.events[this.events.length - 1] === "mousemove")) {
           this.events.push(event.type);
         }
       },
       touchMoveCanvas(event) {
-        // drawMethod === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
-        // drawMethod === "manual" のとき, 何もしない
+        // mode === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
+        // mode === "manual" のとき, 何もしない
 
         // 圧力を取得してみる
         let touch = event.touches[0];
@@ -382,31 +534,43 @@
           this.events.push(event.type);
         }
       },
+      mouseUpCanvas(event) {
+        if (this.mode === 'gesture') {
+          console.log('gesture');
+        } else if (this.mode === 'manual') {
+          // this.candidatePointsをまとめる
+          if (this.drawMethod === 'brush') {
+            // add
+            this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidatePoints.length);
+            this.actionHistory.push(['add', this.candidatePoints]);
+            this.currentIndex = this.actionHistory.length - 1;
+          } else if (this.drawMethod === 'eracer') {
+            this.delete(this.candidatePoints);
+          }
+          this.candidatePoints = [];
+        }
+        this.drawPoints();
+      },
       mouseOutCanvas() {
-        // drawMethod === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
-        // drawMethod === "manual" のとき, 現在の座標をクリアする
-        if (this.drawMethod === "alongLine") {
-          // this.candPointsを描画
-          // this.points += this.candPoints;
-          this.candPoints = [];
-        } else if (this.drawMethod === "manual") {
+        // mode === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
+        // mode === "manual" のとき, 現在の座標をクリアする
+        if (this.mode === "alongLine") {
+          console.log('pass');
+        } else if (this.mode === "manual") {
           // ブラシの表示をクリア
           if (this.cursor != null) {
-            // 一つ前のcursorの位置をクリアする
-            ctx.beginPath();
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.arc(this.cursor[0], this.cursor[1], this.strokeWidth * 10, 0, 2 * Math.PI, true);
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over';
+            // cursorをクリアする
+            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.strokeWidth*10, 6);
+            this.drawPoints();
           }
         }
         this.cursor = null;
         this.events.push(event.type);
       },
       touchEndCanvas() {
-        // drawMethod === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
-        // drawMethod === "manual" のとき, 現在の座標をクリアする
-        if (this.drawMethod === "alongLine") {
+        // mode === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
+        // mode === "manual" のとき, 現在の座標をクリアする
+        if (this.mode === "alongLine") {
           // this.candPointsを描画
           // this.points += this.candPoints;
           this.candPoints = [];
