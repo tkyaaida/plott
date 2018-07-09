@@ -26,9 +26,7 @@
               <tab name="ブラシ" :selected="true">
                 <label>ブラシ</label>
               </tab>
-              <tab name="一点ずつ">
-                <label>一点ずつ</label>
-              </tab>
+              <tab name="一点ずつ"></tab>
               <tab name="消しゴム">
                 <label>消しゴム</label>
               </tab>
@@ -242,6 +240,21 @@
     }
   };
 
+  let isPointInPolygon = function (point, pointsOfPolygon) {
+    // pointsOfPolygonが作る多角形の内部にpointがあるかを判定する
+    pointsOfPolygon.push(pointsOfPolygon[0]);
+    let count = 0;
+    for (let i = 0; i < pointsOfPolygon.length-1; i++) {
+      if (isCrossing(point, pointsOfPolygon[i], pointsOfPolygon[i+1]))
+        count += 1;
+    }
+    // countが奇数なら内側に入っている
+    if (count % 2 === 1)
+      return true;
+    else
+      return false;
+  };
+
   let calcArea = function (pointsOfPolygon) {
     // pointsOfPolygonで作られる多角形の面積を計算
     pointsOfPolygon.push(pointsOfPolygon[0]);
@@ -323,7 +336,7 @@
         actionHistory: [],  // list of [action_name, points]
         currentIndex: -1,
         candidatePoints: [],
-        pointsOfPolygon: [],
+        candidateCount: 0,
         cursor: null,
         cursorHistory: [],
         count: 0,
@@ -422,27 +435,13 @@
           this.redo(action_name, points);
         }
       },
-      isPointInPolygon(point, pointsOfPolygon) {
-        // pointsOfPolygonが作る多角形の内部にpointがあるかを判定する
-        pointsOfPolygon.push(pointsOfPolygon[0]);
-        let count = 0;
-        for (let i = 0; i < pointsOfPolygon.length-1; i++) {
-          if (isCrossing(point, pointsOfPolygon[i], pointsOfPolygon[i+1]))
-            count += 1;
-        }
-        // countが奇数なら内側に入っている
-        if (count % 2 === 1)
-          return true;
-        else
-          return false;
-      },
       mouseDownCanvas(event) {
         // mode === "alongLine のとき, this.cursorを現在の座標にセット
         // mode === "manual" のとき, 点を描画
 
         let [x, y] = getCoordinate(event);
 
-        if (this.mode === "alongLine") {
+        if (this.mode === "ジェスチャー") {
           this.cursor = [x, y];
         } else if (this.mode === "マニュアル") {
           if (this.manualMode === "一点ずつ") {
@@ -461,6 +460,9 @@
           this.cursor = [x, y];
         }
         else if (this.mode === "マニュアル") {
+          if (this.manualMode === "一点ずつ") {
+            this.add([[x, y]]);
+          }
         } else {
           alert("ERROR: invalid mode")
         }
@@ -500,12 +502,23 @@
             if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
               let [x, y] = getRandomCoordinate(this.cursor[0], this.cursor[1], this.cursorRadius);
               this.candidatePoints.push([x, y]);
+              this.candidateCount += 1;
               this.add([[x, y]]);
             }
           } else if (this.manualMode === '一点ずつ') {
             // 一点ずつは何もしない
           } else if (this.manualMode === '消しゴム') {
             // 消しゴム
+            strokeCircle(x, y, this.cursorRadius);
+            if ((event.buttons === 1 || event.which === 1) && this.cursor !== [x, y]) {
+              let pointsToDelete = this.pointsInCursor();
+              for (let point of pointsToDelete) {
+                if (! ([point[0], point[1]] in this.candidatePoints))
+                  this.candidatePoints.push(point);
+              }
+              this.candidateCount += 1;
+              this.delete(pointsToDelete)
+            }
           } else {
             alert('ERROR: ' + this.manualMode + ' is invalid manualMode')
           }
@@ -553,13 +566,17 @@
           // this.candidatePointsをまとめる
           if (this.manualMode === 'ブラシ') {
             // add
-            this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidatePoints.length);
+            this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidateCount);
             this.actionHistory.push(['add', this.candidatePoints]);
             this.currentIndex = this.actionHistory.length - 1;
           } else if (this.manualMode === '消しゴム') {
-            this.delete(this.candidatePoints);
+            // delete
+            this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidateCount);
+            this.actionHistory.push(['delete', this.candidatePoints]);
+            this.currentIndex = this.actionHistory.length - 1;
           }
           this.candidatePoints = [];
+          this.candidateCount = 0;
         }
         this.drawPoints();
       },
@@ -589,6 +606,15 @@
         }
         this.cursor = null;
         this.events.push(event.type);
+      },
+      pointsInCursor() {
+        // this.pointsの中でcursor内の点を返す
+        let x = this.cursor[0];
+        let y = this.cursor[1];
+        let r = this.cursorRadius;
+        return this.points.filter(function (point) {
+          return (point[0] - x) ** 2 + (point[1] - y) ** 2 <= r**2;
+        })
       },
       saveImage() {
         let base64 = canvas.toDataURL("image/png");
