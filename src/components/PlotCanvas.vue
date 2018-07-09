@@ -468,6 +468,7 @@
 
         if (this.mode === "ジェスチャー") {
           this.cursor = [x, y];
+          this.pointsOfPolygon.push(this.cursor);
         }
         else if (this.mode === "マニュアル") {
           if (this.manualMode === "一点ずつ") {
@@ -538,36 +539,56 @@
         }
       },
       touchMoveCanvas(event) {
-        // mode === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
-        // mode === "manual" のとき, 何もしない
+        // mode === "ジェスチャー" のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
+        // mode === "マニュアル" のとき, 何もしない
 
-        // 圧力を取得してみる
-        let touch = event.touches[0];
-        this.force = touch.force;
+        if (this.mode === "ジェスチャー") {
+          if (this.cursor != null) {
+            let [x, y] = getTouchCoordinate(event);
+            drawLine(this.cursor[0], this.cursor[1], x, y, 3, 'blue');
+            this.pointsOfPolygon.push([x, y]);
+            this.cursor = [x, y];
+          }
+        } else if (this.mode === 'マニュアル') {
 
-        // 圧力の大きさを円で表現
-        // ctx.beginPath();
-        // ctx.globalCompositeOperation = 'destination-out';
-        // ctx.arc(this.cursor[0], this.cursor[1], this.radius, 0, 2*Math.PI, true);
-        // ctx.stroke();
-        // ctx.globalCompositeOperation = 'source-over';
-        this.radius = this.force * 100;
-        ctx.arc(this.cursor[0], this.cursor[1], this.radius, 0, 2 * Math.PI, true);
-        ctx.stroke();
+          // カーソルを移動させる
+          if (this.cursor != null) {
+            // 一つ前のcursorの位置をクリアする
+            eraseStrokedCircle(this.cursor[0], this.cursor[1], this.cursorRadius, 6);
+          }
+          this.drawPoints();
+          let [x, y] = getTouchCoordinate(event);
+          this.cursor = [x, y];
 
-        let [x, y] = getTouchCoordinate(event);
-        // if (this.cursor == null) {
-        //   drawLine(x, y, x, y);
-        // } else {
-        //   drawLine(this.cursor[0], this.cursor[1], x, y);
-        // }
-        drawLine(this.cursor[0], this.cursor[1], x, y);
-        this.cursor = [x, y];
-        if (!(this.events.length > 0 && this.events[this.events.length - 1] === "touchmove")) {
-          this.events.push(event.type);
+          if (this.manualMode === 'ブラシ') {
+            // ブラシで描画
+            // 大きな円を描画
+            strokeCircle(x, y, this.cursorRadius);
+
+            let [x, y] = getRandomCoordinate(this.cursor[0], this.cursor[1], this.cursorRadius);
+            this.candidatePoints.push([x, y]);
+            this.candidateCount += 1;
+            this.add([[x, y]]);
+
+          } else if (this.manualMode === '一点ずつ') {
+            // 一点ずつは何もしない
+          } else if (this.manualMode === '消しゴム') {
+            // 消しゴム
+            strokeCircle(x, y, this.cursorRadius);
+            let pointsToDelete = this.pointsInCursor();
+            for (let point of pointsToDelete) {
+              if (! ([point[0], point[1]] in this.candidatePoints))
+                this.candidatePoints.push(point);
+            }
+            this.candidateCount += 1;
+            this.delete(pointsToDelete)
+          } else {
+            alert('ERROR: ' + this.manualMode + ' is invalid manualMode')
+          }
         }
+        this.drawPoints();
       },
-      mouseUpCanvas(event) {
+      mouseUpCanvas() {
         if (this.mode === 'ジェスチャー') {
           if (this.cursor != null) {
             drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
@@ -593,6 +614,33 @@
         }
         this.drawPoints();
       },
+      touchEndCanvas() {
+        if (this.mode === 'ジェスチャー') {
+          if (this.cursor != null) {
+            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
+            this.pointsOfPolygon.push(this.pointsOfPolygon[0]);
+            this.addPointsFromRegion();
+          }
+        } else if (this.mode === 'マニュアル') {
+          // this.candidatePointsをまとめる
+          if (this.manualMode === 'ブラシ') {
+            // add
+            this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidateCount);
+            this.actionHistory.push(['add', this.candidatePoints]);
+            this.currentIndex = this.actionHistory.length - 1;
+          } else if (this.manualMode === '消しゴム') {
+            // delete
+            this.actionHistory = this.actionHistory.slice(0, this.actionHistory.length - this.candidateCount);
+            this.actionHistory.push(['delete', this.candidatePoints]);
+            this.currentIndex = this.actionHistory.length - 1;
+          }
+          this.candidatePoints = [];
+          this.candidateCount = 0;
+          eraseStrokedCircle(this.cursor[0], this.cursor[1], this.cursorRadius, 6);
+        }
+        this.cursor = null;
+        this.drawPoints();
+      },
       mouseOutCanvas() {
         // mode === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
         // mode === "manual" のとき, 現在の座標をクリアする
@@ -611,17 +659,6 @@
             eraseStrokedCircle(this.cursor[0], this.cursor[1], this.cursorRadius, 6);
             this.drawPoints();
           }
-        }
-        this.cursor = null;
-        this.events.push(event.type);
-      },
-      touchEndCanvas() {
-        // mode === "alongLine" のとき, 作成した領域内の候補の点をthis.pointsに加え, 現在の座標をクリアする
-        // mode === "manual" のとき, 現在の座標をクリアする
-        if (this.mode === "alongLine") {
-          // this.candPointsを描画
-          // this.points += this.candPoints;
-          this.candPoints = [];
         }
         this.cursor = null;
         this.events.push(event.type);
