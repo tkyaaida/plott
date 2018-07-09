@@ -19,13 +19,18 @@
       <div class="box">
         <p class="subtitle is-4">描画方法</p>
         <Tabs isBoxed="true" isToggle="true" @select-tab="setMode">
-          <Tab name="ジェスチャー">
-            <div class="sizeSliderContainer">
-              <label>密度: </label>
-              <input class="slider" step="0.001" min="0.001" max="0.01" value="0.001" type="range" v-model="density" />
-            </div>
+          <Tab name="ジェスチャー" :selected="true">
+            <Tabs isBoxed="true" @select-tab="setGestureMode">
+              <Tab name="描画" :selected="true">
+                <div class="sizeSliderContainer">
+                  <label>密度: </label>
+                  <input class="slider" step="0.001" min="0.001" max="0.01" value="0.001" type="range" v-model="density" />
+                </div>
+              </Tab>
+              <Tab name="消す"></Tab>
+            </Tabs>
           </Tab>
-          <Tab name="マニュアル" @click="setMode" :selected="true">
+          <Tab name="マニュアル">
             <Tabs isBoxed="true" @select-tab="setManualMode">
               <Tab name="ブラシ" :selected="true">
                 <div class="sizeSliderContainer">
@@ -43,6 +48,10 @@
             </Tabs>
           </Tab>
         </Tabs>
+
+        <div class="magic">
+          <button class="button" @click="deleteToNpoints" :disabled="canPushMagicButton">1000個にする</button>
+        </div>
 
         <div v-show="isDev">
           <h3>力: {{ force }}</h3>
@@ -89,16 +98,6 @@
 
   let canvas = null;
   let ctx = null;
-  let mouseMoveFlag = true;
-
-  let timer;
-  let throttle = function (targetFunc, time) {
-    let _time = time || 100;
-    clearTimeout(timer);
-    timer = setTimeout(function () {
-      targetFunc();
-    }, _time);
-  }
 
   // canvasのイベントの座標を取得
   let getCoordinate = function (event) {
@@ -149,18 +148,6 @@
   // canvas上に線を描画
   let drawLine = function (startX, startY, endX, endY, lineWidth=3, strokeStyle='black') {
     ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(endX, endY);
-    ctx.lineCap = "round";
-    ctx.lineWidth = lineWidth;
-    ctx.strokeStyle = strokeStyle;
-    ctx.stroke();
-  };
-
-  // canvas上に点線を描画
-  let drawDashLine = function (startX, startY, endX, endY, {lineWidth=3, strokeStyle='black', segments=[0.1, 0.1]}) {
-    ctx.beginPath();
-    ctx.setLineDash(segments);
     ctx.moveTo(startX, startY);
     ctx.lineTo(endX, endY);
     ctx.lineCap = "round";
@@ -318,7 +305,11 @@
       height() {return this.size[0]},
       width() {return this.size[1]},
       isFirst() {return this.currentIndex === -1},
-      isLast() {return this.currentIndex === this.actionHistory.length - 1}
+      isLast() {return this.currentIndex === this.actionHistory.length - 1},
+      gestureColor() {
+        return this.gestureMode === '描画' ? 'blue' : 'red';
+      },
+      canPushMagicButton() {return this.points.length <= 1000}
     },
     data() {
       return {
@@ -333,8 +324,9 @@
         count: 0,
         events: [],
         force: 0,
-        mode: "マニュアル",
+        mode: "ジェスチャー",
         manualMode: "ブラシ",
+        gestureMode: "描画",
         radius: 0,
         pointRadius: 3,
         cursorRadius: 25,
@@ -352,6 +344,9 @@
       },
       setManualMode(mode) {
         this.manualMode = mode;
+      },
+      setGestureMode(mode) {
+        this.gestureMode = mode;
       },
       drawPoints() {
         for (let point of this.points) {
@@ -435,18 +430,44 @@
         erasePolygon(this.pointsOfPolygon);
         this.pointsOfPolygon = [];
       },
-      deltePointsFromRegion() {
+      deletePointsFromRegion() {
         // ジェスチャーモードで領域を指定したあと, 点を削除
+        let pointsOfPolygon = this.pointsOfPolygon;
         let points = this.points.filter(function (point) {
-          return isPointInPolygon(point, this.pointsOfPolygon);
+          return isPointInPolygon(point, pointsOfPolygon);
         });
         this.delete(points);
         erasePolygon(this.pointsOfPolygon);
         this.pointsOfPolygon = [];
       },
+      deleteToNpoints(N=1000) {
+        // N個の点にする
+
+        let indexArray = Array.from({length: this.points.length}, (v, k) => k);
+
+        for(let i = indexArray.length - 1; i > 0; i--){
+          let r = Math.floor(Math.random() * (i + 1));
+          let tmp = indexArray[i];
+          indexArray[i] = indexArray[r];
+          indexArray[r] = tmp;
+        }
+
+        console.log(indexArray.length)
+        console.log(N)
+
+        let indexToDelete = indexArray.slice(1000, indexArray.length);
+
+        console.log(indexToDelete.length);
+
+        let pointsToDelete = [];
+        for (let index of indexToDelete) {
+            pointsToDelete.push(this.points[index]);
+        }
+
+        this.delete(pointsToDelete);
+        this.drawPoints();
+      },
       mouseDownCanvas(event) {
-        // mode === "alongLine のとき, this.cursorを現在の座標にセット
-        // mode === "manual" のとき, 点を描画
 
         let [x, y] = getCoordinate(event);
 
@@ -461,8 +482,6 @@
         this.events.push(event.type);
       },
       touchStartCanvas(event) {
-        // mode === "alongLine のとき, this.cursorを現在の座標にセット
-        // mode === "manual" のとき, 点を描画
 
         let [x, y] = getTouchCoordinate(event);
 
@@ -481,13 +500,11 @@
         this.events.push(event.type);
       },
       mouseMoveCanvas(event) {
-        // mode === "alongLine のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
-        // mode === "manual" のとき, 円形のカーソルを動かす. ドラッグしているときに点を描画
 
         if (this.mode === "ジェスチャー") {
           if (this.cursor != null) {
             let [x, y] = getCoordinate(event);
-            drawLine(this.cursor[0], this.cursor[1], x, y, 3, 'blue');
+            drawLine(this.cursor[0], this.cursor[1], x, y, 3, this.gestureColor);
             this.pointsOfPolygon.push([x, y]);
             this.cursor = [x, y];
           }
@@ -539,13 +556,10 @@
         }
       },
       touchMoveCanvas(event) {
-        // mode === "ジェスチャー" のとき, ユーザーが引いた線を挟むような補助線を引き囲まれた領域を異なる色に変える
-        // mode === "マニュアル" のとき, 何もしない
-
         if (this.mode === "ジェスチャー") {
           if (this.cursor != null) {
             let [x, y] = getTouchCoordinate(event);
-            drawLine(this.cursor[0], this.cursor[1], x, y, 3, 'blue');
+            drawLine(this.cursor[0], this.cursor[1], x, y, 3, this.gestureColor);
             this.pointsOfPolygon.push([x, y]);
             this.cursor = [x, y];
           }
@@ -591,10 +605,13 @@
       mouseUpCanvas() {
         if (this.mode === 'ジェスチャー') {
           if (this.cursor != null) {
-            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
+            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, this.gestureColor);
             this.pointsOfPolygon.push(this.pointsOfPolygon[0]);
             this.cursor = null;
-            this.addPointsFromRegion();
+            if (this.gestureMode === '描画')
+              this.addPointsFromRegion();
+            else
+              this.deletePointsFromRegion();
           }
         } else if (this.mode === 'マニュアル') {
           // this.candidatePointsをまとめる
@@ -617,9 +634,12 @@
       touchEndCanvas() {
         if (this.mode === 'ジェスチャー') {
           if (this.cursor != null) {
-            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
+            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, this.gestureColor);
             this.pointsOfPolygon.push(this.pointsOfPolygon[0]);
-            this.addPointsFromRegion();
+            if (this.gestureMode === '描画')
+              this.addPointsFromRegion();
+            else
+              this.deletePointsFromRegion();
           }
         } else if (this.mode === 'マニュアル') {
           // this.candidatePointsをまとめる
@@ -647,10 +667,13 @@
         if (this.mode === "ジェスチャー") {
           // ジェスチャーモード
           if (this.cursor != null) {
-            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, 'blue');
+            drawLine(this.cursor[0], this.cursor[1], this.pointsOfPolygon[0][0], this.pointsOfPolygon[0][1], 3, this.gestureColor);
             this.pointsOfPolygon.push(this.pointsOfPolygon[0]);
             this.cursor = null;
-            this.addPointsFromRegion();
+            if (this.gestureMode === '描画')
+              this.addPointsFromRegion();
+            else
+              this.deletePointsFromRegion();
           }
         } else if (this.mode === "マニュアル") {
           // ブラシの表示をクリア
@@ -750,5 +773,9 @@
 
   .sizeSliderContainer {
     margin-top: 50px;
+  }
+
+  .magic {
+    margin-top: 100px;
   }
 </style>
